@@ -43,7 +43,6 @@ export {
   BuildCreateContractTxResponse,
 } from "./endpoints/collection.js";
 
-export { SubmitContractRequest } from "./endpoints/singleton.js";
 export { TxHeader } from "./transaction/header.js";
 
 export {
@@ -55,7 +54,6 @@ export {
   GetTransactionsForContractResponse,
   ApplyInputsToContractRequest,
   ApplyInputsToContractResponsePayload,
-  ApplyInputsToContractResponse,
   GetTransactionsForContractRequest,
 } from "./transaction/endpoints/collection.js";
 

@@ -4,7 +4,7 @@ import * as A from "fp-ts/lib/Array.js";
 import * as TE from "fp-ts/lib/TaskEither.js";
 import { pipe } from "fp-ts/lib/function.js";
 import { formatValidationErrors } from "jsonbigint-io-ts-reporters";
-import { AxiosInstance, isAxiosError } from "axios";
+import { AxiosInstance } from "axios";
 
 import { MarloweVersion } from "@marlowe.io/language-core-v1/version";
 
@@ -14,7 +14,6 @@ import { ISO8601 } from "@marlowe.io/adapter/time";
 
 import {
   AddressBech32,
-  AddressesAndCollaterals,
   Metadata,
   Tags,
   TextEnvelopeGuard,
@@ -30,9 +29,7 @@ import { TxHeader, TxHeaderGuard } from "../header.js";
 import { assertGuardEqual, proxy } from "@marlowe.io/adapter/io-ts";
 import { Input } from "@marlowe.io/language-core-v1";
 import { ItemRange, ItemRangeGuard, Page, PageGuard } from "../../../pagination.js";
-import { APIResponse, mkDecodingError } from "../../../apiResponse.js";
-import { left, match, right } from "fp-ts/lib/Either.js";
-import { Errors } from "io-ts/lib/index.js";
+import { APIResponse, HTTPClient, HTTPError } from "../../../apiResponse.js";
 
 export type GETHeadersByRange = (
   contractId: ContractId,
@@ -171,39 +168,36 @@ export const ApplyInputsToContractResponsePayload = t.type({
  * Represents the response the {@link index.RestClient#applyInputsToContract | Apply inputs to contract } endpoint. It can be either a success or a API error or network error. Other types of errors are not expected and rethrown.
  * @category ApplyInputsToContractResponse
  */
-export type ApplyInputsToContractResponse = APIResponse<string, TransactionTextEnvelope>
 
-export const applyInputsToContract = (axiosInstance: AxiosInstance) => async (contractId: ContractId, request: ApplyInputsToContractRequestPayload, addressesAndCollaterals: AddressesAndCollaterals): Promise<ApplyInputsToContractResponse> => {
-  return axiosInstance.post(transactionsEndpoint(contractId), request, {
-    headers: {
-      Accept: "application/vendor.iog.marlowe-runtime.apply-inputs-tx-json",
-      "Content-Type": "application/json",
-      "X-Change-Address": addressesAndCollaterals.changeAddress,
-      "X-Address": pipe(addressesAndCollaterals.usedAddresses, (a) => a.join(",")),
-      "X-Collateral-UTxO": pipe(addressesAndCollaterals.collateralUTxOs, A.map(unTxOutRef), (a) => a.join(",")),
-    }}).then((response) => {
-      return match(
-        (errors: Errors) => left(mkDecodingError(errors)),
-        (payload: { links: {}, resource: TransactionTextEnvelope}) => right(payload.resource)
-      )(ApplyInputsToContractResponsePayload.decode(response.data));
-    }).catch((error) => {
-      if(isAxiosError(error)) {
-        if(error.response) {
-          const body = error.response.data;
-          return left({
-            type: 'http',
-            status: error.response.status,
-            message: error.message,
-            body,
-          });
-        }
-        return left({
-          type: 'network',
-          message: error.message
-        });
+export const applyInputsToContract = (
+  httpClient: HTTPClient,
+  request: ApplyInputsToContractRequest,
+): Promise<APIResponse<HTTPError, TransactionTextEnvelope>> => {
+  const { contractId, changeAddress, invalidBefore, invalidHereafter, inputs } = request;
+
+  const req = {
+    invalidBefore,
+    invalidHereafter,
+    version: request.version ?? "v1",
+    metadata: request.metadata ?? {},
+    tags: request.tags ?? {},
+    inputs,
+  };
+
+  return httpClient.post(
+    transactionsEndpoint(contractId),
+    req,
+    { headers:
+      { "Accept": "application/vendor.iog.marlowe-runtime.apply-inputs-tx-json",
+        "Content-Type": "application/json",
+        "X-Change-Address": changeAddress,
+        "X-Address": pipe(request.usedAddresses ?? [], (a) => a.join(",")),
+        "X-Collateral-UTxO": pipe(request.collateralUTxOs ?? [], A.map(unTxOutRef), (a) => a.join(",")),
       }
-      throw error;
-  });
+    },
+    (body: any) => E.map((r: ApplyInputsToContractResponsePayload) => r.resource)(ApplyInputsToContractResponsePayload.decode(body)),
+    (error: HTTPError) => error
+  );
 };
 
 const transactionsEndpoint = (contractId: ContractId): string =>

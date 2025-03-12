@@ -1,19 +1,10 @@
-import { AxiosInstance, isAxiosError } from "axios";
-
 import * as t from "io-ts/lib/index.js";
-import * as TE from "fp-ts/lib/TaskEither.js";
 import { pipe } from "fp-ts/lib/function.js";
-import * as E from "fp-ts/lib/Either.js";
 import * as A from "fp-ts/lib/Array.js";
-import { formatValidationErrors } from "jsonbigint-io-ts-reporters";
-import { stringify } from "qs";
 import { assertGuardEqual, proxy } from "@marlowe.io/adapter/io-ts";
 import { Contract, RoleName } from "@marlowe.io/language-core-v1";
 import * as G from "@marlowe.io/language-core-v1/guards";
 import { MarloweVersion } from "@marlowe.io/language-core-v1/version";
-
-import * as HTTP from "@marlowe.io/adapter/http";
-import { DecodingError } from "@marlowe.io/adapter/codec";
 
 import {
   Tag,
@@ -40,10 +31,8 @@ import {
 } from "@marlowe.io/runtime-core";
 import { ContractHeader, ContractHeaderGuard } from "../header.js";
 import { RolesConfiguration, RolesConfigurationGuard } from "../rolesConfigurations.js";
-import { ItemRange, ItemRangeGuard, Page, PageGuard } from "../../pagination.js";
-import { APIResponse, mkDecodingError } from "../../apiResponse.js";
-import { left, match, right } from "fp-ts/lib/Either.js";
-import { Errors } from "io-ts/lib/index.js";
+import { ItemRange, Page, PageGuard } from "../../pagination.js";
+import { APIResponse, HTTPClient, HTTPError } from "../../apiResponse.js";
 
 /**
  * Request options for the {@link index.RestClient#getContracts | Get contracts } endpoint
@@ -71,79 +60,6 @@ export interface GetContractsRequest {
   partyRoles?: AssetId[];
 }
 
-export const GetContractsRequestGuard = assertGuardEqual(
-  proxy<GetContractsRequest>(),
-  t.partial({
-    range: ItemRangeGuard,
-    tags: t.array(Tag),
-    partyAddresses: t.array(AddressBech32Guard),
-    partyRoles: t.array(AssetId),
-  }) as t.Type<GetContractsRequest>
-);
-
-export type GETHeadersByRange = (
-  range?: ItemRange
-) => (kwargs: {
-  tags: Tag[];
-  partyAddresses: AddressBech32[];
-  partyRoles: AssetId[];
-}) => TE.TaskEither<Error | DecodingError, GetContractsResponse>;
-
-const roleToParameter = (roleToken: AssetId) => `${roleToken.policyId}.${roleToken.assetName}`;
-
-/**
- * @see {@link https://docs.marlowe.iohk.io/api/get-contracts}
- */
-export const getHeadersByRangeViaAxios: (axiosInstance: AxiosInstance) => GETHeadersByRange =
-  (axiosInstance) =>
-  (range) =>
-  ({ tags, partyAddresses, partyRoles }) =>
-    pipe(
-      {
-        url:
-          "/contracts?" +
-          stringify(
-            {
-              tag: tags,
-              partyAddress: partyAddresses,
-              partyRole: partyRoles.map(roleToParameter),
-            },
-            { indices: false }
-          ),
-        configs: range ? { headers: { Range: range } } : {},
-      },
-      ({ url, configs }) => HTTP.GetWithDataAndHeaders(axiosInstance)(url, configs),
-      TE.map(([headers, data]) => ({
-        data: data,
-        page: {
-          current: headers["content-range"],
-          next: headers["next-range"],
-          total: Number(headers["total-count"]).valueOf(),
-        },
-      })),
-      TE.chainW((data) => TE.fromEither(E.mapLeft(formatValidationErrors)(GETByRangeRawResponseGuard.decode(data)))),
-      TE.map((rawResponse) => ({
-        contracts: pipe(
-          rawResponse.data.results,
-          A.map((result) => result.resource)
-        ), // All logic instead of Any, TODO : Add the flexibility to chose between Any and All
-        page: rawResponse.page,
-      }))
-    );
-
-export type GETByRangeRawResponse = t.TypeOf<typeof GETByRangeRawResponseGuard>;
-export const GETByRangeRawResponseGuard = t.type({
-  data: t.type({
-    results: t.array(
-      t.type({
-        links: t.type({ contract: t.string, transactions: t.string }),
-        resource: ContractHeaderGuard,
-      })
-    ),
-  }),
-  page: PageGuard,
-});
-
 /**
  * Represents the response of the {@link index.RestClient#getContracts | Get contracts } endpoint
  * @remarks
@@ -169,6 +85,98 @@ export const GetContractsResponseGuard = assertGuardEqual(
     page: PageGuard,
   })
 );
+
+export const getContracts = async (
+  httpClient: HTTPClient,
+  request?: GetContractsRequest
+) : Promise<APIResponse<HTTPError, GetContractsResponse>> => {
+  type RawResponse = {
+    data: {
+      results: Array<{
+        links: { contract: string },
+        resource: unknown
+      }>,
+    },
+    page: unknown
+  };
+
+  return await httpClient.get(
+    "/contracts",
+    { params:
+      { range: request?.range,
+        tags: request?.tags ?? [],
+        partyAddresses: request?.partyAddresses ?? [],
+        partyRoles: request?.partyRoles ?? []
+      },
+    },
+    (body: any) => GetContractsResponseGuard.decode(body),
+    (error: HTTPError) => error,
+  );
+}
+
+// export type GetHeadersByRangeRequest = {
+//   range?: ItemRange;
+//   tags: Tag[];
+//   partyAddresses: AddressBech32[];
+//   partyRoles: AssetId[];
+// };
+//
+// const roleToParameter = (roleToken: AssetId) => `${roleToken.policyId}.${roleToken.assetName}`;
+//
+// /**
+//  * @see {@link https://docs.marlowe.iohk.io/api/get-contracts}
+//  */
+// export const getHeadersByRangeViaAxios = async (
+//   httpClient: HTTPClient,
+//   request: GetHeadersByRangeRequest,
+//   ): Promise<APIResponse<HTTPError, GetContractsResponse>> => {
+//   return httpClient.
+//
+//    pipe(
+//      {
+//        url:
+//          "/contracts?" +
+//          stringify(
+//            {
+//              tag: tags,
+//              partyAddress: partyAddresses,
+//              partyRole: partyRoles.map(roleToParameter),
+//            },
+//            { indices: false }
+//          ),
+//        configs: range ? { headers: { Range: range } } : {},
+//      },
+//      ({ url, configs }) => HTTP.GetWithDataAndHeaders(axiosInstance)(url, configs),
+//      TE.map(([headers, data]) => ({
+//        data: data,
+//        page: {
+//          current: headers["content-range"],
+//          next: headers["next-range"],
+//          total: Number(headers["total-count"]).valueOf(),
+//        },
+//      })),
+//      TE.chainW((data) => TE.fromEither(E.mapLeft(formatValidationErrors)(GETByRangeRawResponseGuard.decode(data)))),
+//      TE.map((rawResponse) => ({
+//        contracts: pipe(
+//          rawResponse.data.results,
+//          A.map((result) => result.resource)
+//        ), // All logic instead of Any, TODO : Add the flexibility to chose between Any and All
+//        page: rawResponse.page,
+//      }))
+//    );
+
+export type GETByRangeRawResponse = t.TypeOf<typeof GETByRangeRawResponseGuard>;
+export const GETByRangeRawResponseGuard = t.type({
+  data: t.type({
+    results: t.array(
+      t.type({
+        links: t.type({ contract: t.string, transactions: t.string }),
+        resource: ContractHeaderGuard,
+      })
+    ),
+  }),
+  page: PageGuard,
+});
 
 /**
  * Either a non-merkleized Marlowe Contract or a merkleized One
@@ -274,11 +282,6 @@ export const BuildCreateContractTxRequestWithSourceIdGuard = assertGuardEqual(
 export type BuildCreateContractTxRequest =
   | BuildCreateContractTxRequestWithContract
   | BuildCreateContractTxRequestWithSourceId;
-
-export const BuildCreateContractTxRequestGuard = assertGuardEqual(
-  proxy<BuildCreateContractTxRequest>(),
-  t.union([BuildCreateContractTxRequestWithContractGuard, BuildCreateContractTxRequestWithSourceIdGuard])
-);
 
 /**
  * Request options for the {@link index.RestClient#buildCreateContractTx | Build Create Contract Tx } endpoint
@@ -562,7 +565,7 @@ export interface BuildCreateContractTxResponse {
 /**
  * @hidden
  */
-const CreateContractResponseGuard = assertGuardEqual(
+const BuildCreateContractTxResponseGuard = assertGuardEqual(
   proxy<BuildCreateContractTxResponse>(),
   t.type({
     contractId: ContractIdGuard,
@@ -571,48 +574,47 @@ const CreateContractResponseGuard = assertGuardEqual(
   })
 );
 
-export type PostResponse = t.TypeOf<typeof PostResponse>;
-export const PostResponse = t.type({
-  links: t.type({ contract: t.string }),
-  resource: CreateContractResponseGuard,
-});
+// export type BuildCreateContractTxResponse = t.TypeOf<typeof BuildCreateContractTxResponseGuard>;
+// export const BuildCreateContractTxResponse = t.type({
+//   links: t.type({ contract: t.string }),
+//   resource: BuildCreateContractTxResponseGuard,
+// });
 /**
  * @see {@link https://docs.marlowe.iohk.io/api/create-contracts}
  */
-export const postViaAxios: (axiosInstance: AxiosInstance) => BuildCreateContractTxEndpoint =
-  (axiosInstance) => async (postContractsRequest, addressesAndCollaterals, stakeAddress) => {
-    return await axiosInstance.post("/contracts", postContractsRequest, {
-      headers: {
-        Accept: "application/vendor.iog.marlowe-runtime.contract-tx-json",
+export const buildCreateContractTx =  async (
+  httpClient: HTTPClient,
+  request: BuildCreateContractTxRequest
+) => {
+  const postContractsRequest = {
+    contract: "contract" in request ? request.contract : request.sourceId,
+    version: request.version,
+    metadata: request.metadata ?? {},
+    tags: request.tags ?? {},
+    roles: request.roles,
+    threadRoleName: request.threadRoleName,
+    accounts: request.accounts ?? {},
+  };
+  const addressesAndCollaterals = {
+    changeAddress: request.changeAddress,
+    usedAddresses: request.usedAddresses ?? [],
+    collateralUTxOs: request.collateralUTxOs ?? [],
+  };
+  return await httpClient.post(
+    "/contracts",
+    postContractsRequest,
+    { headers:
+      { "Accept": "application/vendor.iog.marlowe-runtime.contract-tx-json",
         "Content-Type": "application/json",
-        ...(stakeAddress && {
-          "X-Stake-Address": unStakeAddressBech32(stakeAddress),
+        ...(request.stakeAddress && {
+          "X-Stake-Address": unStakeAddressBech32(request.stakeAddress),
         }),
         "X-Change-Address": addressesAndCollaterals.changeAddress,
         "X-Address": pipe(addressesAndCollaterals.usedAddresses, (a) => a.join(",")),
         "X-Collateral-UTxO": pipe(addressesAndCollaterals.collateralUTxOs, A.map(unTxOutRef), (a) => a.join(",")),
       },
-    }).then((response) => {
-      return match(
-        (errors: Errors) => left(mkDecodingError(errors)),
-        (payload: { links: {}, resource: BuildCreateContractTxResponse}) => right(payload.resource)
-      )(PostResponse.decode(response.data));
-    }).catch((error) => {
-      if(isAxiosError(error) && error.response) {
-        if(error.response) {
-          const body = error.response.data;
-          return left({
-            type: 'http',
-            status: error.response.status,
-            message: error.message,
-            body,
-          });
-        }
-        return left({
-          type: 'network',
-          message: error.message
-        });
-      }
-      throw error;
-    });
+    },
+    (body: any) => BuildCreateContractTxResponseGuard.decode(body?.resource ?? body),
+    (error: HTTPError) => error,
+  )
 }

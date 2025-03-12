@@ -2,8 +2,14 @@
   description = "Marlowe ts-sdk";
 
   inputs = {
-    iogx.url = "github:input-output-hk/iogx";
-    marlowe-spec.url = "github:input-output-hk/marlowe";
+    iogx = {
+      url = "github:input-output-hk/iogx";
+    };
+    marlowe-cardano.url = "github:input-output-hk/marlowe-cardano?ref=paluh/runtime@v1.0.1";
+    marlowe-plutus.url = "github:input-output-hk/marlowe-plutus";
+    marlowe-spec.url = "github:marlowe-lang/marlowe";
+    cardano-node.url = "github:IntersectMBO/cardano-node/9.1.0";
+    nixpkgs.follows = "iogx/nixpkgs";
   };
 
   outputs = inputs: inputs.iogx.lib.mkFlake {

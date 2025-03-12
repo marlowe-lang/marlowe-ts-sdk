@@ -2,7 +2,7 @@ import { Option } from "fp-ts/lib/Option.js";
 import { Contract, Environment, Input, Party, RoleName } from "@marlowe.io/language-core-v1";
 import { unsafeTaskEither } from "@marlowe.io/adapter/fp-ts";
 
-import { getAddressesAndCollaterals, WalletAPI, WalletDI } from "@marlowe.io/wallet/api";
+import { getAddressesAndCollaterals, WalletAPI } from "@marlowe.io/wallet/api";
 import {
   PolicyId,
   ContractId,
@@ -16,7 +16,7 @@ import {
   AccountDeposits,
 } from "@marlowe.io/runtime-core";
 
-import { FPTSRestAPI, RestClient, RestDI, ItemRange, DeprecatedRestDI } from "@marlowe.io/runtime-rest-client";
+import { RestClient, ItemRange } from "@marlowe.io/runtime-rest-client";
 
 import { Next, noNext } from "@marlowe.io/language-core-v1/next";
 import {
@@ -27,13 +27,6 @@ import {
 import { SingleInputTx } from "@marlowe.io/language-core-v1/transaction.js";
 import { ISO8601, iso8601ToPosixTime } from "@marlowe.io/adapter/time";
 import { ContractBundleList } from "@marlowe.io/marlowe-object";
-
-/**
- *
- * @description Dependency Injection for the Contract API
- * @hidden
- */
-export type ContractsDI = WalletDI & RestDI;
 
 /**
  * Request parameters used by {@link api.ContractsAPI#createContract | createContract}.
@@ -305,20 +298,19 @@ export interface ContractsAPI {
 
 export function mkContractLifecycle(
   wallet: WalletAPI,
-  deprecatedRestAPI: FPTSRestAPI,
+  // deprecatedRestAPI: FPTSRestAPI,
   restClient: RestClient
 ): ContractsAPI {
-  const di = { wallet, deprecatedRestAPI, restClient };
   return {
     createContract: createContract(di),
     applyInputs: applyInputs(di),
     getApplicableInputs: getApplicableInputs(di),
     getContractIds: getContractIds(di),
-    getInputHistory: getInputHistory(di),
+    getInputHistory: getInputHistory(restClient)
   };
 }
 export const getInputHistory =
-  ({ restClient }: ContractsDI) =>
+  (restClient: RestClient) => (
   async (contractId: ContractId): Promise<SingleInputTx[]> => {
     const transactionHeaders = await restClient.getTransactionsForContract({
       contractId,
@@ -437,19 +429,55 @@ const getApplicableInputs =
     }
   };
 
+
+// The new API of the restClient allows us to do: getContracts(req: GetContractsRequest)
+// export interface Page {
+//   current?: ItemRange;
+//   next?: ItemRange;
+//   /**
+//    * Total Contracts from the query.
+//    */
+//   total: number;
+// }
+// export interface GetContractsResponse {
+//   contracts: ContractHeader[];
+//   page: Page;
+// }
+// export interface GetContractsRequest {
+//   /**
+//    * Optional pagination request. Note that when you call {@link index.RestClient#getContracts | Get contracts }
+//    * the response includes the next and previous range headers.
+//    */
+//   range?: ItemRange;
+//   /**
+//    * Optional tags to filter the contracts by.
+//    */
+//   // QUESTION: @Jamie or @N.H, a tag is marked as string, but when creating a contract you need to pass a key and a value, what is this
+//   //           string supposed to be? I have some contracts with tag "{SurveyContract: CryptoPall2023}" that I don't know how to search for.
+//   tags?: Tag[];
+//   /**
+//    * Optional partyAddresses to filter the contracts by.
+//    */
+//   partyAddresses?: AddressBech32[];
+//   /**
+//    * Optional partyRoles to filter the contracts by.
+//    */
+//   partyRoles?: AssetId[];
+// }
+
 const getContractIds =
-  ({ deprecatedRestAPI, wallet }: ContractsDI & DeprecatedRestDI) =>
+  (restClient: RestClient, wallet: WalletAPI) =>
   async (): Promise<ContractId[]> => {
     const partyAddresses = [await wallet.getChangeAddress(), ...(await wallet.getUsedAddresses())];
-    const kwargs = { tags: [], partyAddresses, partyRoles: [] };
-    const loop = async (acc: ContractId[], range?: ItemRange): Promise<ContractId[]> => {
-      const result = await deprecatedRestAPI.contracts.getHeadersByRange(range)(kwargs)();
-      if (result._tag === "Left") throw result.left;
-      const response = result.right;
-      const contractIds = [...acc, ...response.contracts.map(({ contractId }) => contractId)];
-      return response.page.next ? loop(contractIds, response.page.next) : contractIds;
-    };
-    return loop([]);
+    type NextItemRange = "first-fetch" | ItemRange | "done";
+    let next: NextItemRange = "first-fetch";
+    const contractIds = [];
+    while(next !== "done") {
+      const nextRange: ItemRange | undefined = next === "first-fetch" ? undefined : next;
+      const contracts = await restClient.getContracts({ range: nextRange, partyAddresses });
+      next = contracts.page.next ?? "done";
+      contractIds.push(...contracts.contracts.map(c => c.contractId));
+    }
   };
 
 const getParties: (walletApi: WalletAPI) => (roleTokenMintingPolicyId: PolicyId) => Promise<Party[]> =

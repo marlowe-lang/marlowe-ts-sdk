@@ -1,8 +1,11 @@
 import { MINUTES } from "@marlowe.io/adapter/time";
 import { Contract, IDeposit, lovelace } from "@marlowe.io/language-core-v1";
-import { AddressBech32, ContractId, transactionWitnessSetTextEnvelope, TxOutRef } from "@marlowe.io/runtime-core";
-import { mkRestClient, RestClient } from "@marlowe.io/runtime-rest-client";
-import { BuildCreateContractTxRequestWithContract, BuildCreateContractTxResponse, ContractDetails, TransactionTextEnvelope } from "@marlowe.io/runtime-rest-client/contract/index.js";
+import { AddressBech32, ContractId, transactionWitnessSetTextEnvelope } from "@marlowe.io/runtime-core";
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { mkRestClient, Page, RestClient } from "@marlowe.io/runtime-rest-client";
+import { BuildCreateContractTxRequestWithContract, BuildCreateContractTxResponse, ContractDetails, ContractHeader, TransactionTextEnvelope } from "@marlowe.io/runtime-rest-client/contract/index.js";
 import { generateSeedPhrase, logDebug, mkTestEnvironment, readTestConfiguration, safeStringify, ParticipantInfo, TestEnvironment } from "@marlowe.io/testing-kit";
 import { expect, test } from "vitest";
 import { isRight, match } from "fp-ts/lib/Either.js";
@@ -10,6 +13,14 @@ import { isRight, match } from "fp-ts/lib/Either.js";
 import console from "console";
 import { fail } from "assert";
 global.console = console;
+
+const writeErrorToTempFile = (response: unknown) => {
+  const tmpDir = os.tmpdir();
+  const tmpFile = path.join(tmpDir, `marlowe-contract-error-${Date.now()}.json`);
+  console.log(`Writing error to ${tmpFile}`);
+  fs.writeFileSync(tmpFile, safeStringify(response, 2));
+  return tmpFile;
+};
 
 
 type Ref<T> = { current: T | null };
@@ -74,27 +85,41 @@ const contractTest = await (async () => {
 })();
 
 contractTest("can navigate through some Marlowe Contracts pages" + "(GET:  /contracts/)", async ({ restClient }: ContractTestContext) => {
-    const firstPage = await restClient.getContracts({
+    const response = await restClient.getContracts({
       tags: [],
       partyAddresses: [],
       partyRoles: [],
     });
+    const firstPage = match(
+      (error) => fail(`Error: ${safeStringifyNoLucid(error)}`) as unknown as {contracts: ContractHeader[], page: Page},
+      (res: {contracts: ContractHeader[], page: Page}) => res
+    )(response);
+
     expect(firstPage.contracts.length).toBe(100);
     expect(firstPage.page.total).toBeGreaterThan(100);
 
     expect(firstPage.page.next).toBeDefined();
 
-    const secondPage = await restClient.getContracts({
+    const secondResponse = await restClient.getContracts({
       range: firstPage.page.next,
     });
+    const secondPage = match(
+      (error) => fail(`Error: ${safeStringifyNoLucid(error)}`) as unknown as {contracts: ContractHeader[], page: Page},
+      (res: {contracts: ContractHeader[], page: Page}) => res
+    )(secondResponse);
+
     expect(secondPage.contracts.length).toBe(100);
     expect(secondPage.page.total).toBeGreaterThan(100);
 
     expect(secondPage.page.next).toBeDefined();
 
-    const thirdPage = await restClient.getContracts({
+    const thirdResponse = await restClient.getContracts({
       range: secondPage.page.next,
     });
+    const thirdPage = match(
+      (error) => fail(`Error: ${safeStringifyNoLucid(error)}`) as unknown as {contracts: ContractHeader[], page: Page},
+      (res: {contracts: ContractHeader[], page: Page}) => res
+    )(thirdResponse);
 
     expect(thirdPage.contracts.length).toBe(100);
     expect(thirdPage.page.total).toBeGreaterThan(100);
@@ -112,13 +137,34 @@ contractTest(
       partyAddresses: [],
       partyRoles: [],
     });
-    expect(firstPage.contracts.length).toBe(100);
-    expect(firstPage.page.total).toBeGreaterThan(100);
-    expect(firstPage.page.next).toBeDefined();
+    match(
+      (error) => {
+        if ('response' in error) {
+          const tmpFile = writeErrorToTempFile(error.response);
+          fail(`Decoding error - response written to ${tmpFile}\nError: ${safeStringifyNoLucid(error)}`);
+        }
+        fail(`Error: ${safeStringifyNoLucid(error)}`);
+      },
+      async (res: {contracts: ContractHeader[], page: Page}) => {
+        expect(res.contracts.length).toBe(100);
+        expect(res.page.total).toBeGreaterThan(100);
+        expect(res.page.next).toBeDefined();
 
-    await Promise.all(
-      firstPage.contracts.map((contract) => restClient.getContractById({ contractId: contract.contractId }))
-    );
+        await Promise.all(
+          res.contracts.map(async (contract: ContractHeader) => {
+            try {
+              await restClient.getContractById(contract.contractId);
+            } catch (error: any) {
+              if (error?.response) {
+                const tmpFile = writeErrorToTempFile(error.response);
+                throw new Error(`Contract ${contract.contractId} decoding error - response written to ${tmpFile}\nError: ${safeStringifyNoLucid(error)}`);
+              }
+              throw error;
+            }
+          })
+        );
+      }
+    )(firstPage);
   },
   10*MINUTES
 );
@@ -151,10 +197,10 @@ contractTest("can create a contract" + "(POST/PUT:  /contracts/)",
     logDebug(`createResponse: ${safeStringifyNoLucid(createResponse)}`);
     const witnessSetHex = await user.wallet.signTx(createResponse.tx.cborHex);
     logDebug(`witnessSetHex: ${witnessSetHex}`);
-    const submitResponse = await restClient.submitContract({
+    const submitResponse = await restClient.submitContract(
       contractId,
-      txEnvelope: transactionWitnessSetTextEnvelope(witnessSetHex),
-    });
+      transactionWitnessSetTextEnvelope(witnessSetHex),
+    );
     logDebug(`submitResponse: ${safeStringifyNoLucid(submitResponse)}`);
     expect(submitResponse).toBeDefined();
     expect(isRight(submitResponse)).toBeTruthy();
@@ -180,7 +226,7 @@ contractTest("can apply input to a contract", async ({ contractInfo, restClient,
       skip();
       return;
     }
-    await awaitResult(async () => restClient.getContractById({ contractId }).then((response) => {
+    await awaitResult(async () => restClient.getContractById(contractId).then((response) => {
       return match(
         (_) => undefined,
         (res: ContractDetails) => res.utxo
