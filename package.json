@@ -19,7 +19,7 @@
   ],
   "license": "Apache-2.0",
   "scripts": {
-    "build": "tsc --version && tsc --build && shx mkdir -p dist && rollup --config rollup/config.mjs",
+    "build": "echo 'Running tsc' && tsc --version && tsc --build --verbose && shx mkdir -p dist && rollup --config rollup/config.mjs",
     "clean": "npm run clean --workspaces && shx rm -rf dist",
     "test": "tsc --build tsconfig.test.json && NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --config ./jest.unit.config.js --verbose",
     "test:e2e": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --runInBand --config ./jest.e2e.config.js --verbose",
@@ -28,9 +28,16 @@
     "serve": "ws --port 1337 --rewrite '/importmap -> https://cdn.jsdelivr.net/gh/input-output-hk/marlowe-ts-sdk@0.3.0-beta/jsdelivr-npm-importmap.js'",
     "serve-dev": "ws --port 1337 --rewrite '/importmap -> /dist/local-importmap.js'",
     "format": "npx prettier --write .",
-    "postinstall": "cd examples/nodejs && npm install"
+    "postinstall": "cd examples/nodejs && npm install",
+    "test:vitest": "vitest run",
+    "test:vitest:watch": "vitest",
+    "marlowe": "node packages/cli/dist/bin/marlowe.js"
   },
   "workspaces": [
+    "packages/testing-kit-ng",
+    "packages/cli"
+  ],
+  "dispabledWorkspaces": [
     "packages/adapter",
     "packages/marlowe-template",
     "packages/language/core/v1",
@@ -48,6 +55,7 @@
     "@blockfrost/blockfrost-js": "5.2.0",
     "@blockfrost/openapi": "0.1.54",
     "@dcspark/cardano-multiplatform-lib-nodejs": "^6.0.1",
+    "@eslint/js": "^9.22.0",
     "@relmify/jest-fp-ts": "^2.0.2",
     "@rollup/plugin-commonjs": "^25.0.3",
     "@rollup/plugin-json": "^6.0.0",
@@ -61,7 +69,6 @@
     "@types/qs": "6.9.7",
     "axios-curlirize": "2.0.0",
     "dotenv": "^16.0.3",
-    "eslint": "^7.32.0",
     "http-server": "^14.1.1",
     "jest": "^29.4",
     "jest-serial-runner": "^1.2.1",
@@ -77,8 +84,10 @@
     "ts-node": "^10.9.1",
     "typedoc": "^0.24.8",
     "typescript": "^4.9.5",
+    "typescript-eslint": "^8.27.0",
     "typescript-language-server": "^3.1.0",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "zod": "^3.24.2"
   },
   "packageManager": "npm@9.3.1"
 }

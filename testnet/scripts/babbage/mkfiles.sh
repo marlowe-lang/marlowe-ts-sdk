@@ -30,7 +30,7 @@ SECURITY_PARAM=100
 NUM_SPO_NODES=3
 INIT_SUPPLY=12000000
 START_TIME="$(${DATE} -d "now + 5 seconds" +%s)"
-SHELLEY_START_TIME="$(${DATE} -u -d "@$START_TIME +%Y-%m-%dT%H:%M:%SZ")"
+SHELLEY_START_TIME="$(${DATE} -u -d @"$START_TIME" +%Y-%m-%dT%H:%M:%SZ)"
 ROOT="${1-example}"
 mkdir -p "${ROOT}"
 
@@ -85,7 +85,7 @@ jq -n < configuration/defaults/db-sync-config.json > "${ROOT}/db-sync-config.jso
 # Because in Babbage the overlay schedule and decentralization parameter
 # are deprecated, we must use the "create-staked" cli command to create
 # SPOs in the ShelleyGenesis
-$CARDANO_CLI genesis create-staked --genesis-dir "${ROOT}" \
+$CARDANO_CLI latest genesis create-staked --genesis-dir "${ROOT}" \
   --testnet-magic "${NETWORK_MAGIC}" \
   --gen-pools 3 \
   --supply            2000000000000 \

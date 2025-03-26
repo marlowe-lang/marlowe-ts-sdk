@@ -2,8 +2,10 @@
   "compilerOptions": {
     "types": ["node"]
   },
+  "include": ["eslint.config.mjs"],
   "files": [],
-  "references": [
+  "references": [{ "path": "./packages/testing-kit-ng/src" }, { "path": "./packages/cli/src" }],
+  "disabledReferences": [
     { "path": "./packages/adapter/src" },
     { "path": "./packages/marlowe-template/src" },
     { "path": "./packages/language/core/v1/src" },
@@ -16,6 +18,7 @@
     { "path": "./packages/token-metadata-client/src" },
     { "path": "./packages/marlowe-object/src" },
     { "path": "./examples/nodejs/src" },
-    { "path": "./packages/testing-kit/src" }
+    { "path": "./packages/testing-kit/src" },
+    { "path": "./packages/cli/src" }
   ]
 }

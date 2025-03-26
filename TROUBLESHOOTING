@@ -1,1 +1,3 @@
+WIP: We are collecting useful commands which we will properly document at the end in the README section
+
 psql --host $PWD/.run/postgres/pgdata --port 5432  -d mgdoc

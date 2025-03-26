@@ -1,0 +1,21 @@
+{
+  "name": "@marlowe.io/cli",
+  "version": "0.4.0-beta",
+  "type": "module",
+  "bin": {
+    "marlowe": "./dist/bin/marlowe.js"
+  },
+  "dependencies": {
+    "@marlowe.io/testing-kit-ng": "v0.4.0-beta"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build src && chmod +x ./dist/bin/marlowe.js",
+    "clean": "shx rm -rf dist"
+  }
+}

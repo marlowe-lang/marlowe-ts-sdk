@@ -1,18 +1,12 @@
 // import { mkRuntimeLifecycle } from "@marlowe.io/runtime-lifecycle";
-import { mkRestClient } from "@marlowe.io/runtime-rest-client";
+import { mkRestClient } from '@marlowe.io/runtime-rest-client';
 
-import { Blockfrost } from "lucid-cardano";
+import { Blockfrost } from 'lucid-cardano';
 
 // import { RuntimeLifecycle } from "@marlowe.io/runtime-lifecycle/api";
-import { Assets } from "@marlowe.io/runtime-core";
-import {
-  TestConfiguration,
-  logDebug,
-  logInfo,
-  logWalletInfo,
-  mkLucidBankWallet,
-} from "@marlowe.io/testing-kit";
-import { ProvisionRequest, BankWalletAPI, DAppWalletAPI } from "../wallet/api.js";
+import { Assets } from '@marlowe.io/runtime-core';
+import { TestConfiguration, logDebug, logInfo, logWalletInfo, mkLucidBankWallet } from '@marlowe.io/testing-kit';
+import { ProvisionRequest, BankWalletAPI, DAppWalletAPI } from '../wallet/api.js';
 
 /**
  * List of Participants available for a test
@@ -59,24 +53,28 @@ export type Participants = {
 export const mkTestEnvironment =
   (provisionRequest: ProvisionRequest) =>
   async (testConfiguration: TestConfiguration): Promise<TestEnvironment> => {
-    logInfo("Test Environment : Initiating");
+    logInfo('Test Environment : Initiating');
 
     const provider = new Blockfrost(testConfiguration.lucid.blockfrostUrl, testConfiguration.lucid.blockfrostProjectId);
 
     const runtimeClient = mkRestClient(testConfiguration.runtimeURL);
-    const bank = await mkLucidBankWallet(runtimeClient, provider, testConfiguration.network, testConfiguration.bank.seedPhrase);
+    const bank = await mkLucidBankWallet(
+      runtimeClient,
+      provider,
+      testConfiguration.network,
+      testConfiguration.bank.seedPhrase
+    );
 
-    await logWalletInfo("bank", bank);
+    await logWalletInfo('bank', bank);
     const bankBalance = await bank.getLovelaces();
-    console.log("WT")
     if (bankBalance <= 100_000_000n) {
-      throw { message: "Bank is not sufficiently provisioned (< 100 Ada)" };
+      throw { message: 'Bank is not sufficiently provisioned (< 100 Ada)' };
     }
-    logDebug("Bank is provisioned enough to run tests");
+    logDebug('Bank is provisioned enough to run tests');
     const participants = await bank.provision(provisionRequest);
-    logDebug("Participants provisioned");
+    logDebug('Participants provisioned');
 
-    logInfo("Test Environment : Ready");
+    logInfo('Test Environment : Ready');
     return {
       bank,
       participants: participants,

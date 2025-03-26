@@ -10,6 +10,26 @@ import jsonPlugin from "@rollup/plugin-json";
 import { buildRollupInput, getAllPackageInfo } from "./package-helper.mjs";
 import { buildImportMapScript } from "./import-map.mjs";
 
+function debugPlugin() {
+  return {
+    name: 'debug',
+    transform(code, id) {
+      if (id.includes('.json')) {
+        console.log('Processing JSON file:', id);
+        try {
+          JSON.parse(code);
+          console.log('Valid JSON:', id);
+        } catch (e) {
+          console.error('Invalid JSON in file:', id);
+          console.error('Error:', e);
+          console.error('Content:', code);
+        }
+      }
+      return null;
+    }
+  };
+}
+
 const nodePlugin = nodeResolve({ browser: true });
 
 function isExternal(id, parentId, isResolved) {
@@ -20,7 +40,7 @@ function isExternal(id, parentId, isResolved) {
   return isExternal;
 }
 
-const plugins = [nodePlugin, commonjs(), jsonPlugin(), outputSize(), visualizer()];
+const plugins = [debugPlugin(), nodePlugin, commonjs(), jsonPlugin(), outputSize(), visualizer()];
 
 const packageConfig = (format) => (packageInfo) => {
   const suffix = format == "cjs" ? "cjs" : "js";

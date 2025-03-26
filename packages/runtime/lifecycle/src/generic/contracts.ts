@@ -1,8 +1,8 @@
-import { Option } from "fp-ts/lib/Option.js";
-import { Contract, Environment, Input, Party, RoleName } from "@marlowe.io/language-core-v1";
-import { unsafeTaskEither } from "@marlowe.io/adapter/fp-ts";
+import { Option } from 'fp-ts/lib/Option.js';
+import { Contract, Environment, Input, Party, RoleName } from '@marlowe.io/language-core-v1';
+import { unsafeTaskEither } from '@marlowe.io/adapter/fp-ts';
 
-import { getAddressesAndCollaterals, WalletAPI } from "@marlowe.io/wallet/api";
+import { getAddressesAndCollaterals, WalletAPI } from '@marlowe.io/wallet/api';
 import {
   PolicyId,
   ContractId,
@@ -14,19 +14,19 @@ import {
   Metadata,
   Tags,
   AccountDeposits,
-} from "@marlowe.io/runtime-core";
+} from '@marlowe.io/runtime-core';
 
-import { RestClient, ItemRange } from "@marlowe.io/runtime-rest-client";
+import { RestClient, ItemRange } from '@marlowe.io/runtime-rest-client';
 
-import { Next, noNext } from "@marlowe.io/language-core-v1/next";
+import { Next, noNext } from '@marlowe.io/language-core-v1/next';
 import {
   BuildCreateContractTxRequest,
   BuildCreateContractTxRequestOptions,
   RolesConfiguration,
-} from "@marlowe.io/runtime-rest-client/contract";
-import { SingleInputTx } from "@marlowe.io/language-core-v1/transaction.js";
-import { ISO8601, iso8601ToPosixTime } from "@marlowe.io/adapter/time";
-import { ContractBundleList } from "@marlowe.io/marlowe-object";
+} from '@marlowe.io/runtime-rest-client/contract';
+import { SingleInputTx } from '@marlowe.io/language-core-v1/transaction.js';
+import { ISO8601, iso8601ToPosixTime } from '@marlowe.io/adapter/time';
+import { ContractBundleList } from '@marlowe.io/marlowe-object';
 
 /**
  * Request parameters used by {@link api.ContractsAPI#createContract | createContract}.
@@ -306,11 +306,11 @@ export function mkContractLifecycle(
     applyInputs: applyInputs(di),
     getApplicableInputs: getApplicableInputs(di),
     getContractIds: getContractIds(di),
-    getInputHistory: getInputHistory(restClient)
+    getInputHistory: getInputHistory(restClient),
   };
 }
 export const getInputHistory =
-  (restClient: RestClient) => (
+  (restClient: RestClient) =>
   async (contractId: ContractId): Promise<SingleInputTx[]> => {
     const transactionHeaders = await restClient.getTransactionsForContract({
       contractId,
@@ -324,10 +324,10 @@ export const getInputHistory =
       )
     );
     const sortOptionalBlock = (a: Option<BlockHeader>, b: Option<BlockHeader>) => {
-      if (a._tag === "None" || b._tag === "None") {
+      if (a._tag === 'None' || b._tag === 'None') {
         // TODO: to avoid this error we should provide a higer level function that gets the transactions as the different
         //       status and with the appropiate values for each state.
-        throw new Error("A confirmed transaction should have a valid block");
+        throw new Error('A confirmed transaction should have a valid block');
       } else {
         if (a.value.blockNo < b.value.blockNo) {
           return -1;
@@ -339,7 +339,7 @@ export const getInputHistory =
       }
     };
     return transactions
-      .filter((tx) => tx.status === "confirmed")
+      .filter((tx) => tx.status === 'confirmed')
       .sort((a, b) => sortOptionalBlock(a.block, b.block))
       .map((tx) => {
         const interval = {
@@ -368,7 +368,7 @@ export const createContract =
     const addressesAndCollaterals = await getAddressesAndCollaterals(wallet);
 
     const baseRequest: BuildCreateContractTxRequestOptions = {
-      version: "v1",
+      version: 'v1',
       accounts: createContractRequest.accountDeposits ?? {},
       changeAddress: addressesAndCollaterals.changeAddress,
       usedAddresses: addressesAndCollaterals.usedAddresses,
@@ -384,7 +384,7 @@ export const createContract =
     };
 
     let restClientRequest: BuildCreateContractTxRequest;
-    if ("contract" in createContractRequest) {
+    if ('contract' in createContractRequest) {
       restClientRequest = {
         ...baseRequest,
 
@@ -406,9 +406,9 @@ export const createContract =
     try {
       hexTransactionWitnessSet = await wallet.signTx(buildCreateContractTxResponse.tx.cborHex);
     } catch (e) {
-      console.error("Error signing transaction cbor: ", buildCreateContractTxResponse.tx.cborHex);
+      console.error('Error signing transaction cbor: ', buildCreateContractTxResponse.tx.cborHex);
       throw e;
-    };
+    }
 
     await restClient.submitContract({
       contractId,
@@ -417,107 +417,109 @@ export const createContract =
     return [contractId, contractIdToTxId(contractId)];
   };
 
-const getApplicableInputs =
-  ({ wallet, deprecatedRestAPI }: ContractsDI & DeprecatedRestDI) =>
-  async (contractId: ContractId, environement: Environment): Promise<Next> => {
-    const contractDetails = await unsafeTaskEither(deprecatedRestAPI.contracts.contract.get(contractId));
-    if (!contractDetails.state) {
-      return noNext;
-    } else {
-      const parties = await getParties(wallet)(contractDetails.roleTokenMintingPolicyId);
-      return await unsafeTaskEither(deprecatedRestAPI.contracts.contract.next(contractId)(environement)(parties));
-    }
-  };
-
-
-// The new API of the restClient allows us to do: getContracts(req: GetContractsRequest)
-// export interface Page {
-//   current?: ItemRange;
-//   next?: ItemRange;
-//   /**
-//    * Total Contracts from the query.
-//    */
-//   total: number;
-// }
-// export interface GetContractsResponse {
-//   contracts: ContractHeader[];
-//   page: Page;
-// }
-// export interface GetContractsRequest {
-//   /**
-//    * Optional pagination request. Note that when you call {@link index.RestClient#getContracts | Get contracts }
-//    * the response includes the next and previous range headers.
-//    */
-//   range?: ItemRange;
-//   /**
-//    * Optional tags to filter the contracts by.
-//    */
-//   // QUESTION: @Jamie or @N.H, a tag is marked as string, but when creating a contract you need to pass a key and a value, what is this
-//   //           string supposed to be? I have some contracts with tag "{SurveyContract: CryptoPall2023}" that I don't know how to search for.
-//   tags?: Tag[];
-//   /**
-//    * Optional partyAddresses to filter the contracts by.
-//    */
-//   partyAddresses?: AddressBech32[];
-//   /**
-//    * Optional partyRoles to filter the contracts by.
-//    */
-//   partyRoles?: AssetId[];
-// }
-
-const getContractIds =
-  (restClient: RestClient, wallet: WalletAPI) =>
-  async (): Promise<ContractId[]> => {
-    const partyAddresses = [await wallet.getChangeAddress(), ...(await wallet.getUsedAddresses())];
-    type NextItemRange = "first-fetch" | ItemRange | "done";
-    let next: NextItemRange = "first-fetch";
-    const contractIds = [];
-    while(next !== "done") {
-      const nextRange: ItemRange | undefined = next === "first-fetch" ? undefined : next;
-      const contracts = await restClient.getContracts({ range: nextRange, partyAddresses });
-      next = contracts.page.next ?? "done";
-      contractIds.push(...contracts.contracts.map(c => c.contractId));
-    }
-  };
-
-const getParties: (walletApi: WalletAPI) => (roleTokenMintingPolicyId: PolicyId) => Promise<Party[]> =
-  (walletAPI) => async (roleMintingPolicyId) => {
-    const changeAddress: Party = await walletAPI
-      .getChangeAddress()
-      .then((addressBech32) => ({ address: addressBech32 }));
-    const usedAddresses: Party[] = await walletAPI.getUsedAddresses().then((addressesBech32) =>
-      addressesBech32.map((addressBech32) => ({
-        address: addressBech32,
-      }))
-    );
-    const roles: Party[] = (await walletAPI.getTokens())
-      .filter((token) => token.assetId.policyId == roleMintingPolicyId)
-      .map((token) => ({ role_token: token.assetId.policyId }));
-    return roles.concat([changeAddress]).concat(usedAddresses);
-  };
-
-export const applyInputs =
-  ({ wallet, restClient }: ContractsDI) =>
-  async (contractId: ContractId, applyInputsRequest: ApplyInputsRequest): Promise<TxId> => {
-    const addressesAndCollaterals = await getAddressesAndCollaterals(wallet);
-    const envelope = await restClient.applyInputsToContract({
-      contractId,
-      changeAddress: addressesAndCollaterals.changeAddress,
-      usedAddresses: addressesAndCollaterals.usedAddresses,
-      collateralUTxOs: addressesAndCollaterals.collateralUTxOs,
-      inputs: applyInputsRequest.inputs,
-      invalidBefore: applyInputsRequest.invalidBefore,
-      invalidHereafter: applyInputsRequest.invalidHereafter,
-      version: "v1",
-      metadata: applyInputsRequest.metadata,
-      tags: applyInputsRequest.tags,
-    });
-
-    const signed = await wallet.signTx(envelope.tx.cborHex);
-    await restClient.submitContractTransaction({
-      contractId,
-      transactionId: envelope.transactionId,
-      hexTransactionWitnessSet: signed,
-    });
-    return envelope.transactionId;
-  };
+// TODO: paluh - bring that API back
+//
+// const getApplicableInputs =
+//   ({ wallet, deprecatedRestAPI }: ContractsDI & DeprecatedRestDI) =>
+//   async (contractId: ContractId, environement: Environment): Promise<Next> => {
+//     const contractDetails = await unsafeTaskEither(deprecatedRestAPI.contracts.contract.get(contractId));
+//     if (!contractDetails.state) {
+//       return noNext;
+//     } else {
+//       const parties = await getParties(wallet)(contractDetails.roleTokenMintingPolicyId);
+//       return await unsafeTaskEither(deprecatedRestAPI.contracts.contract.next(contractId)(environement)(parties));
+//     }
+//   };
+//
+//
+// // The new API of the restClient allows us to do: getContracts(req: GetContractsRequest)
+// // export interface Page {
+// //   current?: ItemRange;
+// //   next?: ItemRange;
+// //   /**
+// //    * Total Contracts from the query.
+// //    */
+// //   total: number;
+// // }
+// // export interface GetContractsResponse {
+// //   contracts: ContractHeader[];
+// //   page: Page;
+// // }
+// // export interface GetContractsRequest {
+// //   /**
+// //    * Optional pagination request. Note that when you call {@link index.RestClient#getContracts | Get contracts }
+// //    * the response includes the next and previous range headers.
+// //    */
+// //   range?: ItemRange;
+// //   /**
+// //    * Optional tags to filter the contracts by.
+// //    */
+// //   // QUESTION: @Jamie or @N.H, a tag is marked as string, but when creating a contract you need to pass a key and a value, what is this
+// //   //           string supposed to be? I have some contracts with tag "{SurveyContract: CryptoPall2023}" that I don't know how to search for.
+// //   tags?: Tag[];
+// //   /**
+// //    * Optional partyAddresses to filter the contracts by.
+// //    */
+// //   partyAddresses?: AddressBech32[];
+// //   /**
+// //    * Optional partyRoles to filter the contracts by.
+// //    */
+// //   partyRoles?: AssetId[];
+// // }
+//
+// const getContractIds =
+//   (restClient: RestClient, wallet: WalletAPI) =>
+//   async (): Promise<ContractId[]> => {
+//     const partyAddresses = [await wallet.getChangeAddress(), ...(await wallet.getUsedAddresses())];
+//     type NextItemRange = "first-fetch" | ItemRange | "done";
+//     let next: NextItemRange = "first-fetch";
+//     const contractIds = [];
+//     while(next !== "done") {
+//       const nextRange: ItemRange | undefined = next === "first-fetch" ? undefined : next;
+//       const contracts = await restClient.getContracts({ range: nextRange, partyAddresses });
+//       next = contracts.page.next ?? "done";
+//       contractIds.push(...contracts.contracts.map(c => c.contractId));
+//     }
+//   };
+//
+// const getParties: (walletApi: WalletAPI) => (roleTokenMintingPolicyId: PolicyId) => Promise<Party[]> =
+//   (walletAPI) => async (roleMintingPolicyId) => {
+//     const changeAddress: Party = await walletAPI
+//       .getChangeAddress()
+//       .then((addressBech32) => ({ address: addressBech32 }));
+//     const usedAddresses: Party[] = await walletAPI.getUsedAddresses().then((addressesBech32) =>
+//       addressesBech32.map((addressBech32) => ({
+//         address: addressBech32,
+//       }))
+//     );
+//     const roles: Party[] = (await walletAPI.getTokens())
+//       .filter((token) => token.assetId.policyId == roleMintingPolicyId)
+//       .map((token) => ({ role_token: token.assetId.policyId }));
+//     return roles.concat([changeAddress]).concat(usedAddresses);
+//   };
+//
+// export const applyInputs =
+//   ({ wallet, restClient }: ContractsDI) =>
+//   async (contractId: ContractId, applyInputsRequest: ApplyInputsRequest): Promise<TxId> => {
+//     const addressesAndCollaterals = await getAddressesAndCollaterals(wallet);
+//     const envelope = await restClient.applyInputsToContract({
+//       contractId,
+//       changeAddress: addressesAndCollaterals.changeAddress,
+//       usedAddresses: addressesAndCollaterals.usedAddresses,
+//       collateralUTxOs: addressesAndCollaterals.collateralUTxOs,
+//       inputs: applyInputsRequest.inputs,
+//       invalidBefore: applyInputsRequest.invalidBefore,
+//       invalidHereafter: applyInputsRequest.invalidHereafter,
+//       version: "v1",
+//       metadata: applyInputsRequest.metadata,
+//       tags: applyInputsRequest.tags,
+//     });
+//
+//     const signed = await wallet.signTx(envelope.tx.cborHex);
+//     await restClient.submitContractTransaction({
+//       contractId,
+//       transactionId: envelope.transactionId,
+//       hexTransactionWitnessSet: signed,
+//     });
+//     return envelope.transactionId;
+//   };
